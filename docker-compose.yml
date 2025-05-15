@@ -1,0 +1,47 @@
+version: '3.8'
+services:
+  dataset-server:
+    build:
+      context: . # Il contesto è la directory principale del progetto (MCP_server)
+      dockerfile: dataset.Dockerfile # Specifica il Dockerfile per il dataset server
+    container_name: dataset_server_container
+    # Non è necessario usare 'volumes' qui se i dati sono statici e copiati nell'immagine.
+    # Se i dati cambiassero frequentemente e non volessi ricostruire l'immagine,
+    # potresti usare i volumi per mappare i file dall'host al container.
+    # Ma per file "DB" che sono parte dell'applicazione, copiarli è spesso più semplice.
+    ports:
+      - "8000:8000"
+    networks:
+      - mcp_network
+
+  mcp-web-server:
+    build:
+      context: .
+      dockerfile: mcp_web.Dockerfile 
+    container_name: mcp_web_container
+    ports:
+      - "8080:8080"
+    environment:
+      - DATASET_API_BASE_URL=http://dataset-server:8000
+    depends_on:
+      - dataset-server
+    networks:
+      - mcp_network
+
+  frontend-server:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend_container
+    ports:
+      - "5000:5000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY} # Assicurati di avere un file .env o di passare questa variabile
+    depends_on:
+      - mcp-web-server
+    networks:
+      - mcp_network
+
+networks:
+  mcp_network:
+    driver: bridge

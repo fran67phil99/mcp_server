@@ -1,0 +1,30 @@
+{
+    "dipendenti": [
+      {
+        "ruolo": "stagista",
+        "nome": "Paolo Banfi",
+        "societa": "Mauden",
+        "eta": 26
+      },
+
+      {"ruolo": "stagista",
+      "nome": "Filippo Barberio",
+      "societa": "Mauden",
+      "eta": 25
+
+        },
+        
+      {
+        "ruolo": "stagista", 
+        "nome": "David Riboldi",
+        "societa": "Mauden",
+        "eta": 23
+      },
+      {
+        "ruolo": "stagista",
+        "nome": "Dana Perera", 
+        "societa": "Mauden",
+        "eta": 20
+      }
+    ]
+  }

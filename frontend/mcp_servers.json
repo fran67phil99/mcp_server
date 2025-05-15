@@ -1,0 +1,22 @@
+{
+    "available_mcp_servers": [
+      {
+        "id": "mcp_local_csv",
+        "name": "Server MCP Locale (Stagisti/CSV)",
+        "url": "http://mcp-web-server:8080/sse",
+        "default_selected": true
+      },
+      {
+        "id": "mcp_prod_database",
+        "name": "Server MCP Produzione (Database)",
+        "url": "http://mcp.example.com/v1/mcp",
+        "default_selected": false
+      },
+      {
+        "id": "mcp_test_api",
+        "name": "Server MCP Test (API Esterne)",
+        "url": "http://test.mcp.example.com/v1/mcp",
+        "default_selected": false
+      }
+    ]
+  }

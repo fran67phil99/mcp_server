@@ -1,0 +1,5 @@
+.venv_test
+.venv
+__pycache__/
+stage_mcp/
+requests/

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Chatbot (OpenAI)</title> <!-- Aggiornato titolo -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/12.3.2/markdown-it.min.js"></script>
+    <style>
+        .chat-container {
+            height: calc(100vh - 280px); /* Aggiustato per più spazio se necessario */
+        }
+        .chat-messages {
+            height: calc(100% - 60px);
+            overflow-y: auto;
+        }
+        .bot-message {
+            background-color: #f0f7ff;
+            border-left: 4px solid #3b82f6;
+        }
+        .user-message {
+            background-color: #f8fafc;
+            border-left: 4px solid #64748b;
+        }
+        .system-message {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            font-style: italic;
+        }
+        .error-message {
+            background-color: #fee2e2;
+            border-left: 4px solid #ef4444;
+        }
+        .log-container {
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.8rem;
+        }
+        pre {
+            white-space: pre-wrap;
+            background-color: #f1f5f9;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+        code {
+            font-family: monospace;
+        }
+        .loading-dots span {
+            opacity: 0;
+            animation: blink 1.4s infinite;
+        }
+        .loading-dots span:nth-child(1) {
+            animation-delay: 0s;
+        }
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
+        }
+        #mcp-server-selection label {
+            display: block; /* Migliore visualizzazione per le checkbox */
+            margin-bottom: 0.25rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <div class="bg-white rounded-lg shadow-lg p-4 mb-4">
+            <h1 class="text-2xl font-bold text-blue-600 mb-2">MCP Chatbot (OpenAI)</h1> <!-- Aggiornato titolo -->
+            
+            <!-- Sezione Selezione Server -->
+            <div id="mcp-server-selection-container" class="mb-4 p-3 border rounded bg-gray-50">
+                <h3 class="font-semibold mb-2 text-gray-700">Seleziona Server MCP da Utilizzare:</h3>
+                <div id="mcp-server-checkboxes" class="text-sm">
+                    <!-- Le checkbox verranno popolate qui da JavaScript -->
+                    <p class="text-gray-500">Caricamento server disponibili...</p>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <div class="flex space-x-2">
+                    <button id="initialize-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                        Inizializza Chatbot
+                    </button>
+                    <button id="reset-btn" class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600" disabled>
+                        Reset Chat
+                    </button>
+                </div>
+                <div id="status-container" class="text-sm text-gray-600 mt-1 flex items-center">
+                    <span id="status">Non connesso</span>
+                    <span id="loading-dots" class="loading-dots ml-2 hidden">
+                        <span>.</span><span>.</span><span>.</span>
+                    </span>
+                </div>
+            </div>
+            
+            <div class="chat-container rounded border">
+                <div id="chat-messages" class="chat-messages p-4 space-y-3"></div>
+                
+                <div class="flex p-2 border-t">
+                    <input type="text" id="user-input" placeholder="Scrivi un messaggio..." 
+                           class="flex-1 p-2 border rounded" disabled>
+                    <button id="send-btn" class="ml-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600" disabled>
+                        Invia
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-semibold">Log di Sistema</h3>
+                    <button id="toggle-logs" class="text-xs text-blue-500">Mostra/Nascondi</button>
+                </div>
+                <div id="logs" class="log-container hidden p-2 border rounded bg-gray-800 text-gray-200"></div>
+            </div>
+        </div>
+        <!-- Rimosso il secondo pulsante di inizializzazione e la sezione duplicata -->
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const md = window.markdownit();
+            const statusEl = document.getElementById('status');
+            const chatMessagesEl = document.getElementById('chat-messages');
+            const userInputEl = document.getElementById('user-input');
+            const sendBtnEl = document.getElementById('send-btn');
+            const initBtnEl = document.getElementById('initialize-btn'); // Unico pulsante di inizializzazione
+            const resetBtnEl = document.getElementById('reset-btn');
+            const logsEl = document.getElementById('logs');
+            const toggleLogsEl = document.getElementById('toggle-logs');
+            const loadingDotsEl = document.getElementById('loading-dots');
+            const serverCheckboxesDiv = document.getElementById('mcp-server-checkboxes'); // Contenitore per le checkbox
+
+            // Stato dell'applicazione
+            let isInitialized = false; 
+            let isProcessing = false;  
+
+            const socket = io();
+
+            function addMessage(content, type = 'system') {
+                const messageEl = document.createElement('div');
+                // Applica classi Tailwind direttamente per coerenza
+                messageEl.classList.add('p-3', 'rounded', 'mb-2'); // Aggiunto mb-2 per spaziatura
+                if (type === 'bot') {
+                    messageEl.classList.add('bot-message');
+                    messageEl.innerHTML = md.render(content);
+                } else if (type === 'user') {
+                    messageEl.classList.add('user-message');
+                    messageEl.textContent = content;
+                } else if (type === 'error') {
+                    messageEl.classList.add('error-message');
+                    messageEl.textContent = content;
+                } else { // system
+                    messageEl.classList.add('system-message');
+                    messageEl.textContent = content;
+                }
+                
+                chatMessagesEl.appendChild(messageEl);
+                chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+            }
+
+            function addLog(content) {
+                const logLine = document.createElement('div');
+                logLine.textContent = content;
+                logsEl.appendChild(logLine);
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }
+
+            function setProcessingState(processing) {
+                isProcessing = processing;
+                if (processing) {
+                    loadingDotsEl.classList.remove('hidden');
+                    userInputEl.disabled = true;
+                    sendBtnEl.disabled = true;
+                    resetBtnEl.disabled = true; 
+                    initBtnEl.disabled = true; 
+                } else {
+                    loadingDotsEl.classList.add('hidden');
+                    userInputEl.disabled = !isInitialized;
+                    sendBtnEl.disabled = !isInitialized;
+                    resetBtnEl.disabled = !isInitialized;
+                    initBtnEl.disabled = isInitialized; 
+                    if (isInitialized) {
+                        userInputEl.focus();
+                    }
+                }
+            }
+
+            userInputEl.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && userInputEl.value.trim() && !isProcessing && isInitialized) {
+                    sendMessage();
+                }
+            });
+
+            sendBtnEl.addEventListener('click', function() {
+                if (userInputEl.value.trim() && !isProcessing && isInitialized) {
+                    sendMessage();
+                }
+            });
+
+            initBtnEl.addEventListener('click', function() {
+                if (!isProcessing && !isInitialized) {
+                    const selectedServerIds = [];
+                    document.querySelectorAll('#mcp-server-checkboxes input[type="checkbox"]:checked').forEach(checkbox => {
+                        selectedServerIds.push(checkbox.value);
+                    });
+
+                    if (selectedServerIds.length === 0) {
+                        addMessage('Errore: Devi selezionare almeno un server MCP per l\'inizializzazione.', 'error');
+                        statusEl.textContent = 'Selezione server richiesta.';
+                        return;
+                    }
+                    
+                    addMessage(`Invio richiesta di inizializzazione per ${selectedServerIds.length} server selezionati...`, 'system');
+                    statusEl.textContent = 'Inizializzazione in corso...';
+                    setProcessingState(true);
+                    socket.emit('initialize', { selected_server_ids: selectedServerIds });
+                }
+            });
+
+            resetBtnEl.addEventListener('click', function() {
+                if (isInitialized && !isProcessing) {
+                    statusEl.textContent = 'Reset in corso...';
+                    setProcessingState(true);
+                    socket.emit('reset_conversation');
+                    addMessage('Conversazione resettata localmente (in attesa conferma server)', 'system');
+                    // Pulisci i messaggi esistenti dalla UI
+                    while (chatMessagesEl.firstChild) {
+                        chatMessagesEl.removeChild(chatMessagesEl.firstChild);
+                    }
+                }
+            });
+
+            toggleLogsEl.addEventListener('click', function() {
+                logsEl.classList.toggle('hidden');
+            });
+
+            function sendMessage() {
+                const message = userInputEl.value.trim();
+                if (message && isInitialized) { 
+                    socket.emit('send_message', { message });
+                    addMessage(message, 'user');
+                    userInputEl.value = '';
+                    statusEl.textContent = 'In attesa della risposta...';
+                    setProcessingState(true);
+                } else if (!isInitialized) {
+                    addMessage('Errore: Il Chatbot non è inizializzato. Seleziona i server e clicca su "Inizializza Chatbot".', 'error');
+                }
+            }
+
+            // --- HANDLER DEGLI EVENTI SOCKET.IO ---
+            socket.on('connect', function() {
+                statusEl.textContent = 'Connesso. Seleziona i server e clicca "Inizializza Chatbot".';
+                isInitialized = false; 
+                setProcessingState(false); 
+                initBtnEl.disabled = false; 
+                userInputEl.disabled = true;
+                sendBtnEl.disabled = true;
+                resetBtnEl.disabled = true;
+                addMessage('Benvenuto! Seleziona i server MCP e clicca "Inizializza Chatbot".', 'system');
+                // Richiedi la lista dei server al backend
+                socket.emit('request_server_list');
+            });
+
+            socket.on('available_servers', (data) => {
+                const servers = data.servers;
+                serverCheckboxesDiv.innerHTML = ''; // Pulisci il messaggio di caricamento o le checkbox precedenti
+                if (servers && servers.length > 0) {
+                    servers.forEach(server => {
+                        const checkboxId = `server-checkbox-${server.id}`;
+                        
+                        const container = document.createElement('div'); // Contenitore per label e input
+                        container.classList.add('flex', 'items-center', 'mb-1');
+
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.id = checkboxId;
+                        checkbox.value = server.id;
+                        checkbox.checked = server.default_selected || false;
+                        checkbox.classList.add('form-checkbox', 'h-4', 'w-4', 'text-blue-600');
+                        
+                        const label = document.createElement('label');
+                        label.htmlFor = checkboxId;
+                        label.textContent = ` ${server.name}`; // Spazio iniziale per separazione
+                        label.classList.add('ml-2', 'text-gray-700');
+                        
+                        container.appendChild(checkbox);
+                        container.appendChild(label);
+                        serverCheckboxesDiv.appendChild(container);
+                    });
+                } else {
+                    serverCheckboxesDiv.innerHTML = '<p class="text-red-500">Nessun server MCP disponibile o errore nel caricarli.</p>';
+                }
+            });
+
+            socket.on('status', function(data) {
+                // Aggiorna lo status solo se non siamo in uno stato di elaborazione che ha già impostato un messaggio specifico
+                if (!isProcessing || statusEl.textContent.includes('Inizializzazione') || statusEl.textContent.includes('Reset')) {
+                     statusEl.textContent = data.message;
+                }
+                // addLog(`Status: ${data.message}`); // Opzionale
+            });
+            
+            socket.on('mcp_initialized', function(data) {
+                statusEl.textContent = data.message;
+                isInitialized = true; 
+                setProcessingState(false); 
+                addMessage(data.message, 'system');
+                // Disabilita le checkbox dei server dopo l'inizializzazione
+                document.querySelectorAll('#mcp-server-checkboxes input[type="checkbox"]').forEach(checkbox => {
+                    checkbox.disabled = true;
+                });
+            });
+
+            socket.on('new_message', function(data) { 
+                addMessage(data.text, data.sender || 'bot'); 
+                statusEl.textContent = 'Pronto.';
+                setProcessingState(false);
+                if (data.logs) { 
+                    addLog(data.logs);
+                    if (logsEl.classList.contains('hidden')) {
+                        logsEl.classList.remove('hidden');
+                    }
+                }
+            });
+
+            socket.on('conversation_reset', () => {
+                addMessage('Conversazione resettata sul server.', 'system');
+                statusEl.textContent = 'Conversazione resettata. Pronto.';
+                setProcessingState(false);
+            });
+
+            socket.on('error', function(data) {
+                addMessage(data.message, 'error');
+                statusEl.textContent = 'Errore!';
+                setProcessingState(false);
+                // Se l'errore avviene durante l'inizializzazione, permetti un nuovo tentativo
+                if (!isInitialized) { 
+                    initBtnEl.disabled = false; 
+                    document.querySelectorAll('#mcp-server-checkboxes input[type="checkbox"]').forEach(checkbox => {
+                        checkbox.disabled = false; // Riabilita le checkbox se l'inizializzazione fallisce
+                    });
+                }
+            });
+
+            socket.on('disconnect', function() {
+                statusEl.textContent = 'Disconnesso. Riconnessione in corso...';
+                isInitialized = false;
+                setProcessingState(false);
+                userInputEl.disabled = true;
+                sendBtnEl.disabled = true;
+                initBtnEl.disabled = false; 
+                resetBtnEl.disabled = true;
+                addMessage('Connessione persa. Tentativo di riconnessione...', 'error');
+                // Riabilita le checkbox se ci si disconnette prima dell'inizializzazione o per permettere nuova selezione
+                document.querySelectorAll('#mcp-server-checkboxes input[type="checkbox"]').forEach(checkbox => {
+                    checkbox.disabled = false;
+                });
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.git/
+.github/
+.vscode/
+*.db
+*.sqlite3
+dockerfile # Se non vuoi che il Dockerfile stesso sia nell'immagine
+README.md # O altri file di documentazione non necessari al runtime
+# Aggiungi altri file o directory specifici del tuo progetto
